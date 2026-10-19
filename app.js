@@ -12,6 +12,9 @@
     data: { github: [], youtube: [], hackernews: [] },
     status: { github: 'loading', youtube: 'loading', hackernews: 'loading' }, // loading | ok | error | nokey
     errors: {},
+    reqId: { github: 0, youtube: 0, hackernews: 0 }, // номер последнего запроса: устаревшие ответы игнорируются
+    inflight: { github: false, youtube: false, hackernews: false },
+    ytKey: '', // ключ из формы держим и в памяти: localStorage может быть недоступен
     loadedAt: null,
   };
 
@@ -46,7 +49,7 @@
 
   /* ---------- ключ YouTube: config.js (необязательный файл) или поле на вкладке ---------- */
   function youtubeKey() {
-    return (window.RADAR_CONFIG && window.RADAR_CONFIG.youtubeApiKey) || store.get('radar-yt-key') || '';
+    return state.ytKey || store.get('radar-yt-key') || (window.RADAR_CONFIG && window.RADAR_CONFIG.youtubeApiKey) || '';
   }
   function loadOptionalConfig() {
     return new Promise((resolve) => {
@@ -58,27 +61,31 @@
   }
 
   /* ---------- загрузка ---------- */
-  async function loadSource(name) {
+  async function loadSource(name, force) {
+    if (state.inflight[name] && !force) return; // двойной клик по «Повторить» не плодит запросы
+    const id = ++state.reqId[name];
+    state.inflight[name] = true;
     state.status[name] = 'loading';
     render();
     const now = Date.now();
+    let items = null;
+    let status = 'ok';
+    let failure = null;
     try {
-      let items;
       if (name === 'github') items = await S.loadGithub(now);
       else if (name === 'hackernews') items = await S.loadHN(now);
       else items = await S.loadYouTube(now, youtubeKey());
-      state.data[name] = items;
-      state.status[name] = 'ok';
-      delete state.errors[name];
     } catch (e) {
-      state.data[name] = [];
-      if (e.code === 'NO_KEY') state.status[name] = 'nokey';
-      else {
-        state.status[name] = 'error';
-        state.errors[name] = describeError(name, e);
-      }
+      status = e.code === 'NO_KEY' ? 'nokey' : 'error';
+      failure = e;
     }
-    state.loadedAt = new Date();
+    if (id !== state.reqId[name]) return; // пока шёл запрос, запущен более новый
+    state.inflight[name] = false;
+    state.data[name] = items || [];
+    state.status[name] = status;
+    if (status === 'error') state.errors[name] = describeError(name, failure);
+    else delete state.errors[name];
+    if (status === 'ok') state.loadedAt = new Date();
     render();
   }
 
@@ -88,7 +95,10 @@
         ? 'GitHub ограничил число запросов без ключа. Подождите минуту и повторите.'
         : 'Превышена квота или доступ запрещён (HTTP ' + e.status + ').';
     }
-    if (e.status === 400 || e.status === 401) return 'Ключ не принят (HTTP ' + e.status + '). Проверьте ключ YouTube Data API v3.';
+    if (e.status === 400 || e.status === 401) {
+      return 'Ключ не принят (HTTP ' + e.status + '). Проверьте ключ YouTube Data API v3' +
+        (window.RADAR_CONFIG && window.RADAR_CONFIG.youtubeApiKey && !state.ytKey && !store.get('radar-yt-key') ? ' в файле config.js.' : '.');
+    }
     return 'Не удалось загрузить данные: ' + (e.message || 'ошибка сети') + '.';
   }
 
@@ -109,6 +119,7 @@
   }
 
   /* ---------- рендер ---------- */
+  let lastNotices = null;
   function renderNotices() {
     const tabs = state.tab === 'overview' ? SOURCES : [state.tab];
     const out = [];
@@ -124,26 +135,41 @@
           (s === 'youtube' ? ' <button class="btn ghost" type="button" id="key-reset">Сменить ключ</button>' : '') + '</div></div>');
       }
     }
-    $('notices').innerHTML = out.join('');
+    const html = out.join('');
+    if (html === lastNotices) return;
+    lastNotices = html;
+    $('notices').innerHTML = html;
     const form = $('key-form');
     if (form) form.addEventListener('submit', (e) => {
       e.preventDefault();
       const v = $('key-input').value.trim();
       if (!v) return;
+      state.ytKey = v;
       store.set('radar-yt-key', v);
-      loadSource('youtube');
+      loadSource('youtube', true);
     });
     const reset = $('key-reset');
-    if (reset) reset.addEventListener('click', () => { store.del('radar-yt-key'); state.status.youtube = 'nokey'; render(); });
+    if (reset) reset.addEventListener('click', () => {
+      state.ytKey = '';
+      store.del('radar-yt-key');
+      state.reqId.youtube++; // отменяем возможный запрос со старым ключом
+      state.inflight.youtube = false;
+      state.data.youtube = [];
+      state.status.youtube = 'nokey';
+      render();
+    });
     document.querySelectorAll('[data-retry]').forEach((b) => b.addEventListener('click', () => loadSource(b.dataset.retry)));
   }
 
   function item(it, withDesc) {
+    const when = L.relativeDate(it.date, Date.now());
+    const parsed = new Date(it.date);
+    const tip = Number.isNaN(parsed.getTime()) ? '' : ' title="' + esc(parsed.toLocaleString('ru-RU')) + '"';
     return '<article class="item src-' + it.source + '">' +
       '<div class="n">' + esc(it.growthValue) + '<small>' + esc(it.growthUnit) + '</small></div>' +
       '<div class="body"><a class="title" href="' + esc(it.url) + '" target="_blank" rel="noopener noreferrer">' + esc(it.title) + '</a>' +
       (withDesc && it.description ? '<div class="desc">' + esc(it.description) + '</div>' : '') +
-      '<div class="m" title="' + esc(new Date(it.date).toLocaleString('ru-RU')) + '">' + esc(it.metricLabel) + ' · ' + L.relativeDate(it.date, Date.now()) + '</div></div>' +
+      '<div class="m"' + tip + '>' + esc([it.metricLabel, when].filter(Boolean).join(' · ')) + '</div></div>' +
       '</article>';
   }
 
@@ -164,6 +190,8 @@
     renderNotices();
 
     const view = $('view');
+    view.setAttribute('aria-busy', String((state.tab === 'overview' ? SOURCES : [state.tab]).some((x) => state.status[x] === 'loading')));
+    view.setAttribute('aria-labelledby', 'tab-' + state.tab);
     if (state.tab === 'overview') {
       view.innerHTML = '<div class="cols">' + SOURCES.map((s) => {
         const all = itemsFor(s);
@@ -180,8 +208,8 @@
       view.innerHTML = all.length ? '<div class="grid src-' + s + '">' + all.map((it) => item(it, true)).join('') + '</div>' : placeholder(s, false);
     }
 
-    $('foot').textContent = state.loadedAt ? 'Обновлено ' + state.loadedAt.toLocaleTimeString('ru-RU') +
-      '. GitHub: репозитории, созданные за 7 дней, темп = звёзды в день с момента создания.' : '';
+    $('foot').textContent = state.loadedAt ? 'Последнее успешное обновление: ' + state.loadedAt.toLocaleTimeString('ru-RU') +
+      '. Темп роста: GitHub считает звёзды в день для репозиториев, созданных за 7 дней; YouTube и HackerNews считают просмотры и очки в день.' : '';
   }
 
   /* ---------- события ---------- */

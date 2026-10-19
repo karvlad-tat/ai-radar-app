@@ -50,14 +50,15 @@
   }
 
   function fromYouTube(video, now) {
+    const snippet = video.snippet || {};
     const views = Number(video.statistics && video.statistics.viewCount) || 0;
-    const published = video.snippet.publishedAt;
+    const published = snippet.publishedAt;
     const age = ageDays(published, now);
     return {
       id: 'yt:' + video.id,
       source: 'youtube',
-      title: video.snippet.title,
-      description: video.snippet.channelTitle || '',
+      title: snippet.title || '(без названия)',
+      description: snippet.channelTitle || '',
       url: 'https://www.youtube.com/watch?v=' + video.id,
       date: published,
       popularity: views,
@@ -75,23 +76,9 @@
 
   function formatNumber(n) {
     if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace('.0', '') + 'M';
-    if (n >= 1e4) return Math.round(n / 1e3) + 'K';
+    if (n >= 1e4) { const k = Math.round(n / 1e3); return k >= 1000 ? '1M' : k + 'K'; }
     if (n >= 1e3) return (n / 1e3).toFixed(1).replace('.0', '') + 'K';
     return String(Math.round(n));
-  }
-
-  /* Добавляет growthScore (0..1) — темп роста относительно лучшего в своём источнике.
-     Нужен для общей сортировки в «Обзоре»: звёзды, просмотры и очки несравнимы напрямую. */
-  function withScores(items) {
-    const maxBySource = {};
-    for (const it of items) maxBySource[it.source] = Math.max(maxBySource[it.source] || 0, it.growth);
-    const maxPop = {};
-    for (const it of items) maxPop[it.source] = Math.max(maxPop[it.source] || 0, it.popularity);
-    return items.map((it) => ({
-      ...it,
-      growthScore: maxBySource[it.source] ? it.growth / maxBySource[it.source] : 0,
-      popularityScore: maxPop[it.source] ? it.popularity / maxPop[it.source] : 0,
-    }));
   }
 
   /* Поиск по всем источникам: все слова запроса должны встретиться в заголовке, описании или источнике. */
@@ -104,15 +91,14 @@
     });
   }
 
-  /* Сортировка. В одном источнике сравниваем сырые значения, в «Обзоре» (mixed) — нормализованные. */
-  function sortItems(items, mode, mixed) {
+  const time = (iso) => { const t = Date.parse(iso); return Number.isNaN(t) ? 0 : t; };
+
+  /* Сортировка по скорости роста, дате или популярности. Исходный массив не меняется. */
+  function sortItems(items, mode) {
     const arr = items.slice();
-    const key = {
-      growth: mixed ? 'growthScore' : 'growth',
-      popularity: mixed ? 'popularityScore' : 'popularity',
-    }[mode];
-    if (mode === 'date') arr.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-    else if (key) arr.sort((a, b) => b[key] - a[key] || b.popularity - a.popularity);
+    if (mode === 'date') arr.sort((a, b) => time(b.date) - time(a.date));
+    else if (mode === 'growth') arr.sort((a, b) => b.growth - a.growth || b.popularity - a.popularity);
+    else if (mode === 'popularity') arr.sort((a, b) => b.popularity - a.popularity || b.growth - a.growth);
     return arr;
   }
 
@@ -124,7 +110,7 @@
     return Math.floor(d) + ' дн. назад';
   }
 
-  /* Запрашивает 3 темы и объединяет без дубликатов. */
+  /* Убирает дубликаты по id (одна запись может прийти из нескольких запросов). */
   function dedupe(items) {
     const seen = new Set();
     return items.filter((it) => (seen.has(it.id) ? false : (seen.add(it.id), true)));
@@ -134,5 +120,5 @@
     return new Date(now - days * DAY).toISOString();
   }
 
-  return { ageDays, fromGithub, fromHN, fromYouTube, formatNumber, withScores, filterItems, sortItems, relativeDate, dedupe, isoDaysAgo, hostname };
+  return { ageDays, fromGithub, fromHN, fromYouTube, formatNumber, filterItems, sortItems, relativeDate, dedupe, isoDaysAgo, hostname };
 });

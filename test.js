@@ -42,19 +42,7 @@ test('formatNumber', () => {
   assert.equal(L.formatNumber(1000), '1K');
   assert.equal(L.formatNumber(12400), '12K');
   assert.equal(L.formatNumber(2500000), '2.5M');
-});
-
-test('withScores: нормализация по лидеру своего источника', () => {
-  const items = [
-    { source: 'github', growth: 100, popularity: 400 },
-    { source: 'github', growth: 50, popularity: 800 },
-    { source: 'youtube', growth: 1000000, popularity: 5 },
-  ];
-  const s = L.withScores(items);
-  assert.equal(s[0].growthScore, 1);
-  assert.equal(s[1].growthScore, 0.5);
-  assert.equal(s[2].growthScore, 1);
-  assert.equal(s[1].popularityScore, 1);
+  assert.equal(L.formatNumber(999600), '1M');
 });
 
 test('filterItems: все слова обязательны, ищет по источнику и без учёта регистра', () => {
@@ -68,18 +56,36 @@ test('filterItems: все слова обязательны, ищет по ис�
   assert.equal(L.filterItems(items, 'нет такого').length, 0);
 });
 
-test('sortItems: рост, дата, популярность; в обзоре сравниваются нормализованные значения', () => {
+test('sortItems: рост, дата, популярность; исходный массив не меняется', () => {
   const items = [
-    { id: 'a', date: daysAgo(5), growth: 10, popularity: 900, growthScore: 0.2, popularityScore: 1 },
-    { id: 'b', date: daysAgo(1), growth: 50, popularity: 100, growthScore: 0.9, popularityScore: 0.1 },
-    { id: 'c', date: daysAgo(3), growth: 30, popularity: 500, growthScore: 1, popularityScore: 0.5 },
+    { id: 'a', date: daysAgo(5), growth: 10, popularity: 900 },
+    { id: 'b', date: daysAgo(1), growth: 50, popularity: 100 },
+    { id: 'c', date: daysAgo(3), growth: 30, popularity: 500 },
   ];
   const ids = (arr) => arr.map((i) => i.id).join('');
-  assert.equal(ids(L.sortItems(items, 'growth', false)), 'bca');
-  assert.equal(ids(L.sortItems(items, 'growth', true)), 'cba');
-  assert.equal(ids(L.sortItems(items, 'date', false)), 'bca');
-  assert.equal(ids(L.sortItems(items, 'popularity', false)), 'acb');
-  assert.equal(ids(items), 'abc', 'исходный массив не изменяется');
+  assert.equal(ids(L.sortItems(items, 'growth')), 'bca');
+  assert.equal(ids(L.sortItems(items, 'date')), 'bca');
+  assert.equal(ids(L.sortItems(items, 'popularity')), 'acb');
+  assert.equal(ids(items), 'abc');
+});
+
+test('sortItems: некорректная дата уходит в конец и не ломает порядок', () => {
+  const items = [
+    { id: 'x', date: 'не дата', growth: 1, popularity: 1 },
+    { id: 'a', date: daysAgo(2), growth: 1, popularity: 1 },
+    { id: 'b', date: daysAgo(1), growth: 1, popularity: 1 },
+  ];
+  assert.equal(L.sortItems(items, 'date').map((i) => i.id).join(''), 'bax');
+});
+
+test('fromYouTube: запись без snippet и статистики не падает', () => {
+  const it = L.fromYouTube({ id: 'z' }, NOW);
+  assert.equal(it.title, '(без названия)');
+  assert.equal(it.popularity, 0);
+});
+
+test('relativeDate: пустая строка для неверной даты', () => {
+  assert.equal(L.relativeDate('не дата', NOW), '');
 });
 
 test('relativeDate', () => {
