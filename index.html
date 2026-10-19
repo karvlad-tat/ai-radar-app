@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Radar</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="logo">AI<b>Radar</b><small>тренды ИИ за 7 дней</small></div>
+    <label class="search">
+      <span class="sr">Поиск по всем источникам</span>
+      <input id="q" type="search" placeholder="Поиск по всем источникам" autocomplete="off">
+    </label>
+    <div class="seg" role="group" aria-label="Сортировка">
+      <button type="button" data-sort="growth" aria-pressed="true">Рост</button>
+      <button type="button" data-sort="date" aria-pressed="false">Дата</button>
+      <button type="button" data-sort="popularity" aria-pressed="false">Популярность</button>
+    </div>
+    <button class="theme" id="theme" type="button" role="switch" aria-checked="false" aria-label="Тёмная тема">
+      <span class="theme-track"><span class="theme-knob"></span></span>
+      <span class="theme-text" id="theme-text">Светлая</span>
+    </button>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="Источники">
+    <button role="tab" id="tab-overview" aria-controls="view" class="tab" data-tab="overview" aria-selected="true">Обзор <i class="count" data-count="overview"></i></button>
+    <button role="tab" id="tab-github" aria-controls="view" class="tab" data-tab="github" aria-selected="false">GitHub <i class="count" data-count="github"></i></button>
+    <button role="tab" id="tab-youtube" aria-controls="view" class="tab" data-tab="youtube" aria-selected="false">YouTube <i class="count" data-count="youtube"></i></button>
+    <button role="tab" id="tab-hackernews" aria-controls="view" class="tab" data-tab="hackernews" aria-selected="false">HackerNews <i class="count" data-count="hackernews"></i></button>
+  </nav>
+
+  <div id="notices" class="notices" aria-live="polite"></div>
+  <main id="view" role="tabpanel"></main>
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<script src="lib.js"></script>
+<script src="sources.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
